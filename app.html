@@ -1,0 +1,1309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Monitro — Team Screen Sharing</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d0d14;--s1:#13131e;--s2:#1a1a28;--s3:#22223a;
+  --b1:rgba(255,255,255,0.05);--b2:rgba(255,255,255,0.1);
+  --acc:#6c63ff;--acc2:#3ecfcf;--acc3:#ff6584;
+  --grn:#22d3a0;--ylw:#f5c542;--orn:#f97316;
+  --t1:#f0f0ff;--t2:#8080aa;--t3:#44445a;
+  --r:12px;--r2:8px;
+  --shadow:0 8px 40px rgba(0,0,0,0.5);
+}
+html,body{height:100%;font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--t1);overflow:hidden}
+button{cursor:pointer;font-family:inherit}
+input,select,textarea{font-family:inherit}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:var(--s3);border-radius:4px}
+.hidden{display:none!important}
+
+/* ── SCREENS ── */
+#screen-auth,#screen-setup,#screen-app{position:fixed;inset:0}
+#screen-auth{background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;z-index:100}
+#screen-setup{background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;z-index:90}
+#screen-app{display:none;flex-direction:row;z-index:80}
+#screen-app.show{display:flex}
+
+/* ── AUTH CARD ── */
+.auth-wrap{width:100%;max-width:900px;display:grid;grid-template-columns:1fr 1fr;border-radius:20px;overflow:hidden;border:1px solid var(--b2);box-shadow:var(--shadow)}
+@media(max-width:640px){.auth-wrap{grid-template-columns:1fr}.auth-hero{display:none}}
+.auth-hero{background:linear-gradient(160deg,#1a1040,#0d1a2e);padding:48px 40px;display:flex;flex-direction:column;justify-content:space-between;position:relative;overflow:hidden}
+.auth-hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 30% 40%,rgba(108,99,255,.2),transparent 60%),radial-gradient(ellipse at 80% 80%,rgba(62,207,207,.12),transparent 50%)}
+.hero-logo{font-size:28px;font-weight:800;letter-spacing:-1px;position:relative;z-index:1}.hero-logo span{color:var(--acc)}
+.hero-body{position:relative;z-index:1}.hero-body h2{font-size:30px;font-weight:800;line-height:1.2;letter-spacing:-1px;margin-bottom:14px}
+.hero-body p{color:var(--t2);font-size:13px;line-height:1.7}
+.hero-tags{display:flex;gap:8px;flex-wrap:wrap;position:relative;z-index:1}
+.hero-tag{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);padding:5px 12px;border-radius:99px;font-size:11px;color:var(--t2);font-family:monospace}
+.auth-panel{background:var(--s1);padding:40px;display:flex;flex-direction:column;gap:22px}
+.auth-tabs{display:flex;gap:3px;background:var(--bg);border-radius:8px;padding:3px}
+.auth-tab{flex:1;padding:9px;background:transparent;border:none;color:var(--t2);border-radius:6px;font-size:13px;font-weight:500;transition:all .15s}
+.auth-tab.on{background:var(--s3);color:var(--t1)}
+.auth-form{display:flex;flex-direction:column;gap:14px}
+
+/* ── ORG TYPE PICKER ── */
+.org-pick{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.org-pick-card{padding:14px;border-radius:var(--r2);background:var(--s2);border:1.5px solid var(--b2);cursor:pointer;text-align:center;transition:all .15s;user-select:none}
+.org-pick-card.sel{border-color:var(--acc);background:rgba(108,99,255,.1)}
+.org-pick-card .opc-icon{font-size:22px;margin-bottom:5px}
+.org-pick-card .opc-name{font-size:12px;font-weight:700}
+.org-pick-card .opc-desc{font-size:10px;color:var(--t3);margin-top:2px}
+.org-fields-join{display:none}.org-fields-join.show{display:flex;flex-direction:column;gap:14px}
+.org-fields-create{display:none}.org-fields-create.show{display:flex;flex-direction:column;gap:14px}
+
+/* ── FORM ELEMENTS ── */
+.fl{display:flex;flex-direction:column;gap:5px}
+.lbl{font-size:11px;color:var(--t2);font-weight:700;letter-spacing:.8px;text-transform:uppercase}
+.inp{background:var(--s2);border:1px solid var(--b2);border-radius:var(--r2);padding:11px 13px;color:var(--t1);font-size:14px;outline:none;transition:border .15s;width:100%}
+.inp:focus{border-color:var(--acc)}
+.inp::placeholder{color:var(--t3)}
+.pw-wrap{position:relative}
+.pw-wrap .inp{padding-right:42px}
+.eye{position:absolute;right:0;top:0;bottom:0;width:40px;background:none;border:none;color:var(--t3);font-size:15px;display:flex;align-items:center;justify-content:center;transition:color .15s}
+.eye:hover{color:var(--t1)}
+.btn-primary{padding:12px 18px;border:none;border-radius:var(--r2);background:var(--acc);color:#fff;font-size:14px;font-weight:700;width:100%;transition:all .15s;letter-spacing:.3px}
+.btn-primary:hover:not(:disabled){background:#5a52e0;transform:translateY(-1px)}
+.btn-primary:disabled{opacity:.5;transform:none}
+.btn-secondary{padding:10px 16px;border:1px solid var(--b2);border-radius:var(--r2);background:transparent;color:var(--t1);font-size:13px;font-weight:500;transition:all .15s}
+.btn-secondary:hover{background:var(--s2)}
+.btn-sm{padding:7px 12px;border:1px solid var(--b2);border-radius:6px;background:var(--s2);color:var(--t2);font-size:12px;font-weight:500;transition:all .15s}
+.btn-sm:hover{background:var(--s3);color:var(--t1)}
+.btn-sm.on{background:var(--acc);border-color:var(--acc);color:#fff}
+.btn-danger{padding:7px 12px;border:1px solid rgba(255,101,132,.3);border-radius:6px;background:rgba(255,101,132,.08);color:var(--acc3);font-size:12px;transition:all .15s}
+.btn-danger:hover{background:rgba(255,101,132,.15)}
+.btn-warn{padding:7px 12px;border:1px solid rgba(249,115,22,.3);border-radius:6px;background:rgba(249,115,22,.08);color:var(--orn);font-size:12px;transition:all .15s}
+.btn-warn:hover{background:rgba(249,115,22,.15)}
+.err-box{background:rgba(255,101,132,.08);border:1px solid rgba(255,101,132,.2);border-radius:8px;padding:9px 13px;font-size:12px;color:var(--acc3)}
+.info-box{background:rgba(108,99,255,.08);border:1px solid rgba(108,99,255,.2);border-radius:8px;padding:9px 13px;font-size:12px;color:#a09fff}
+
+/* ── SIDEBAR ── */
+.sidebar{width:230px;flex-shrink:0;background:var(--s1);border-right:1px solid var(--b1);display:flex;flex-direction:column;overflow:hidden}
+.sb-logo{padding:18px 16px 14px;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:8px}
+.sb-logo-text{font-size:20px;font-weight:800;letter-spacing:-.5px}.sb-logo-text span{color:var(--acc)}
+.role-pill{font-size:9px;background:var(--s3);color:var(--t3);padding:2px 7px;border-radius:4px;margin-left:auto;font-family:monospace;text-transform:uppercase}
+.sb-org{padding:10px 14px;border-bottom:1px solid var(--b1)}
+.sb-org-name{font-size:12px;font-weight:700;display:flex;align-items:center;gap:6px}
+.sb-org-code{font-family:monospace;font-size:10px;color:var(--t3);background:var(--s2);padding:2px 7px;border-radius:4px;cursor:pointer;margin-left:auto;transition:color .15s}
+.sb-org-code:hover{color:var(--acc)}
+.sb-nav{flex:1;overflow-y:auto;padding:6px}
+.sb-section{font-size:9px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--t3);padding:10px 9px 5px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:9px 10px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--t2);margin-bottom:1px;transition:all .12s;user-select:none}
+.nav-item:hover{background:var(--s2);color:var(--t1)}
+.nav-item.on{background:rgba(108,99,255,.12);color:var(--acc)}
+.nav-icon{font-size:16px;width:20px;text-align:center}
+.nav-badge{margin-left:auto;background:var(--acc3);color:#fff;font-size:10px;padding:1px 6px;border-radius:99px}
+.sb-footer{padding:10px;border-top:1px solid var(--b1)}
+.user-pill{display:flex;align-items:center;gap:9px;padding:8px;border-radius:8px;background:var(--s2)}
+.av{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0}
+.av.sm{width:26px;height:26px;font-size:10px}
+.av.lg{width:42px;height:42px;font-size:16px}
+.u-name{font-size:12px;font-weight:700}
+.u-role{font-size:10px;color:var(--t3);font-family:monospace}
+.online-dot{width:7px;height:7px;border-radius:50%;background:var(--grn);box-shadow:0 0 6px var(--grn);margin-left:auto;flex-shrink:0;animation:pulse-dot 2s infinite}
+@keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:.5}}
+
+/* ── MAIN ── */
+.main-area{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.topbar{height:54px;flex-shrink:0;background:var(--s1);border-bottom:1px solid var(--b1);display:flex;align-items:center;padding:0 22px;gap:16px}
+.top-title{font-size:15px;font-weight:800;letter-spacing:-.3px}
+.top-sub{font-size:11px;color:var(--t3);font-family:monospace}
+.top-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+.page{flex:1;overflow-y:auto;padding:22px}
+
+/* ── STAT CARDS ── */
+.stats-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px;margin-bottom:22px}
+.stat-card{background:var(--s1);border:1px solid var(--b1);border-radius:var(--r);padding:18px;position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--sc-color,var(--acc))}
+.sc-label{font-size:10px;color:var(--t3);font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:7px}
+.sc-value{font-size:30px;font-weight:800;letter-spacing:-1px;line-height:1}
+.sc-sub{font-size:10px;color:var(--t3);margin-top:5px;font-family:monospace}
+
+/* ── MEMBER GRID ── */
+.member-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.member-card{background:var(--s1);border:1px solid var(--b1);border-radius:var(--r);padding:18px;transition:all .2s}
+.member-card.sharing{border-color:rgba(34,211,160,.2);box-shadow:0 0 20px rgba(34,211,160,.05)}
+.mc-head{display:flex;align-items:center;gap:11px;margin-bottom:14px}
+.mc-status{position:absolute;bottom:0;right:0;width:10px;height:10px;border-radius:50%;border:2px solid var(--s1)}
+.mc-status.online{background:var(--grn)}
+.mc-status.offline{background:var(--t3)}
+.mc-status.sharing{background:var(--acc2);animation:pulse-dot 1s infinite}
+.mc-name{font-size:14px;font-weight:700}
+.mc-email{font-size:11px;color:var(--t3);font-family:monospace;margin-top:1px}
+.mc-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+
+/* ── SCREEN VIEWER ── */
+.viewer-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
+.viewer-tile{background:var(--s1);border:1px solid var(--b1);border-radius:var(--r);overflow:hidden;transition:all .2s}
+.viewer-tile:hover{border-color:var(--b2);transform:translateY(-2px)}
+.viewer-tile.active-share{border-color:rgba(34,211,160,.3)}
+.tile-header{background:var(--s2);padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--b1)}
+.tile-name{font-size:12px;font-weight:700;flex:1}
+.tile-badge{font-size:9px;font-family:monospace;padding:2px 7px;border-radius:4px}
+.tile-badge.live{background:rgba(34,211,160,.15);color:var(--grn);border:1px solid rgba(34,211,160,.2)}
+.tile-badge.offline{background:rgba(255,255,255,.05);color:var(--t3);border:1px solid var(--b1)}
+.tile-video{width:100%;height:220px;background:#000;object-fit:cover;display:block}
+.tile-placeholder{width:100%;height:220px;background:var(--s3);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;color:var(--t3)}
+.tile-placeholder .ph-icon{font-size:36px;opacity:.4}
+.tile-placeholder .ph-text{font-size:12px;font-family:monospace}
+.tile-footer{padding:10px 14px;font-size:11px;color:var(--t3);font-family:monospace;background:var(--s2)}
+
+/* ── MY SCREEN SHARE ── */
+.share-panel{background:var(--s1);border:1px solid var(--b1);border-radius:var(--r);overflow:hidden;margin-bottom:20px}
+.share-header{padding:14px 18px;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:12px}
+.share-title{font-size:14px;font-weight:700}
+.share-sub{font-size:11px;color:var(--t3);font-family:monospace}
+.share-preview{width:100%;max-height:300px;background:#000;object-fit:contain;display:block}
+.share-controls{padding:14px 18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.rec-dot{width:10px;height:10px;border-radius:50%;background:var(--acc3);animation:pulse-dot .8s infinite;flex-shrink:0}
+
+/* ── ATTENDANCE TABLE ── */
+.attend-table{width:100%;border-collapse:collapse;font-size:13px}
+.attend-table th{text-align:left;padding:9px 14px;border-bottom:1px solid var(--b1);font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--t3)}
+.attend-table td{padding:11px 14px;border-bottom:1px solid var(--b1);vertical-align:middle}
+.attend-table tr:last-child td{border-bottom:none}
+.attend-table tr:hover td{background:var(--s2)}
+.attend-bar{height:4px;background:var(--s3);border-radius:99px;overflow:hidden;min-width:60px}
+.attend-fill{height:100%;border-radius:99px;background:linear-gradient(90deg,var(--acc2),var(--acc))}
+.crown{font-size:16px;animation:float 2s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+
+/* ── REWARD CARD ── */
+.reward-card{background:linear-gradient(135deg,rgba(108,99,255,.15),rgba(62,207,207,.08));border:1px solid rgba(108,99,255,.2);border-radius:var(--r);padding:20px;margin-bottom:20px;display:flex;align-items:center;gap:16px}
+.reward-trophy{font-size:48px}
+.reward-info{}
+.reward-title{font-size:16px;font-weight:800;margin-bottom:4px}
+.reward-sub{font-size:12px;color:var(--t2);line-height:1.5}
+
+/* ── BADGES ── */
+.bdg{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:99px;font-size:10px;font-family:monospace;font-weight:600}
+.bdg-green{background:rgba(34,211,160,.1);color:var(--grn);border:1px solid rgba(34,211,160,.2)}
+.bdg-red{background:rgba(255,101,132,.1);color:var(--acc3);border:1px solid rgba(255,101,132,.2)}
+.bdg-blue{background:rgba(62,207,207,.1);color:var(--acc2);border:1px solid rgba(62,207,207,.2)}
+.bdg-purple{background:rgba(108,99,255,.1);color:var(--acc);border:1px solid rgba(108,99,255,.2)}
+.bdg-orange{background:rgba(249,115,22,.1);color:var(--orn);border:1px solid rgba(249,115,22,.2)}
+.bdg-yellow{background:rgba(245,197,66,.1);color:var(--ylw);border:1px solid rgba(245,197,66,.2)}
+
+/* ── SECTION CARD ── */
+.sec-card{background:var(--s1);border:1px solid var(--b1);border-radius:var(--r);overflow:hidden;margin-bottom:20px}
+.sec-head{padding:14px 18px;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:10px}
+.sec-title{font-size:13px;font-weight:700}
+.sec-sub{font-size:11px;color:var(--t3);font-family:monospace}
+.sec-body{padding:18px}
+
+/* ── MODAL ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:500;backdrop-filter:blur(4px)}
+.modal{background:var(--s1);border:1px solid var(--b2);border-radius:16px;padding:26px;width:420px;max-width:90vw;display:flex;flex-direction:column;gap:18px;box-shadow:var(--shadow)}
+.modal-title{font-size:18px;font-weight:800;letter-spacing:-.4px}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
+.code-big{font-family:monospace;font-size:24px;font-weight:700;letter-spacing:6px;color:var(--acc);text-align:center;padding:16px;background:var(--s2);border-radius:8px;cursor:pointer;user-select:all}
+.code-big:hover{background:var(--s3)}
+
+/* ── TOAST ── */
+#toast-wrap{position:fixed;bottom:22px;right:22px;display:flex;flex-direction:column;gap:8px;z-index:9999}
+.toast{background:var(--s2);border:1px solid var(--b2);border-radius:10px;padding:12px 16px;font-size:13px;max-width:300px;box-shadow:var(--shadow);animation:toast-in .25s ease}
+.toast.success{border-left:3px solid var(--grn)}
+.toast.error{border-left:3px solid var(--acc3)}
+.toast.info{border-left:3px solid var(--acc)}
+@keyframes toast-in{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:translateX(0)}}
+
+/* ── EMPTY ── */
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:54px 20px;color:var(--t3);text-align:center;gap:10px}
+.empty-icon{font-size:40px;opacity:.35}
+.empty-title{font-size:15px;font-weight:700;color:var(--t2)}
+.empty-sub{font-size:12px;max-width:240px;line-height:1.6}
+
+/* ── SPINNER ── */
+.spinner{width:20px;height:20px;border:2px solid var(--b2);border-top-color:var(--acc);border-radius:50%;animation:spin .7s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── SETUP SCREEN ── */
+.setup-card{background:var(--s1);border:1px solid var(--b2);border-radius:18px;padding:38px;width:100%;max-width:460px;display:flex;flex-direction:column;gap:22px;box-shadow:var(--shadow)}
+.setup-tabs{display:flex;gap:3px;background:var(--bg);border-radius:8px;padding:3px;margin-bottom:4px}
+.setup-tab{flex:1;padding:8px;background:transparent;border:none;color:var(--t2);border-radius:6px;font-size:13px;font-weight:500;transition:all .15s}
+.setup-tab.on{background:var(--s3);color:var(--t1)}
+</style>
+</head>
+<body>
+<div id="toast-wrap"></div>
+
+<!-- ══════════ AUTH ══════════ -->
+<div id="screen-auth">
+  <div class="auth-wrap">
+    <!-- Hero -->
+    <div class="auth-hero">
+      <div class="hero-logo">Monit<span>ro</span></div>
+      <div class="hero-body">
+        <h2>Screen Sharing & Team Monitoring</h2>
+        <p>Managers monitor the whole team in real-time. Members share their screen. Attendance is tracked automatically. Rewards for top performers.</p>
+      </div>
+      <div class="hero-tags">
+        <span class="hero-tag">Role-based access</span>
+        <span class="hero-tag">Live screen share</span>
+        <span class="hero-tag">Auto attendance</span>
+        <span class="hero-tag">Monthly rewards</span>
+      </div>
+    </div>
+
+    <!-- Form Panel -->
+    <div class="auth-panel">
+      <div style="font-size:22px;font-weight:800;letter-spacing:-.5px">Welcome</div>
+
+      <div class="auth-tabs">
+        <button class="auth-tab on" id="tab-signin" onclick="authTab('signin')">Sign In</button>
+        <button class="auth-tab" id="tab-signup" onclick="authTab('signup')">Create Account</button>
+      </div>
+
+      <!-- SIGN IN -->
+      <div class="auth-form" id="form-signin">
+        <div class="fl"><div class="lbl">Email</div><input class="inp" type="email" id="si-email" placeholder="you@company.com"/></div>
+        <div class="fl"><div class="lbl">Password</div>
+          <div class="pw-wrap"><input class="inp" type="password" id="si-pass" placeholder="••••••••"/>
+          <button class="eye" type="button" id="si-eye" onclick="togglePwd('si-pass','si-eye')">👁️</button></div>
+        </div>
+        <div class="err-box hidden" id="si-err"></div>
+        <button class="btn-primary" id="si-btn" onclick="doSignIn()">Sign In</button>
+      </div>
+
+      <!-- SIGN UP -->
+      <div class="auth-form hidden" id="form-signup">
+        <div class="fl"><div class="lbl">Full Name</div><input class="inp" id="su-name" placeholder="Your full name"/></div>
+        <div class="fl"><div class="lbl">Email</div><input class="inp" type="email" id="su-email" placeholder="you@company.com"/></div>
+        <div class="fl"><div class="lbl">Password</div>
+          <div class="pw-wrap"><input class="inp" type="password" id="su-pass" placeholder="8+ characters"/>
+          <button class="eye" type="button" id="su-eye" onclick="togglePwd('su-pass','su-eye')">👁️</button></div>
+        </div>
+
+        <!-- Org type -->
+        <div class="fl">
+          <div class="lbl">I want to</div>
+          <div class="org-pick">
+            <div class="org-pick-card sel" id="opc-create" onclick="pickOrgType('create')">
+              <div class="opc-icon">🏢</div>
+              <div class="opc-name">Create Org</div>
+              <div class="opc-desc">I'm a manager</div>
+            </div>
+            <div class="org-pick-card" id="opc-join" onclick="pickOrgType('join')">
+              <div class="opc-icon">🔑</div>
+              <div class="opc-name">Join Org</div>
+              <div class="opc-desc">I have a code</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="org-fields-create show" id="ofc">
+          <div class="fl"><div class="lbl">Organization Name</div><input class="inp" id="su-orgname" placeholder="My Company, Team Name…"/></div>
+        </div>
+        <div class="org-fields-join" id="ofj">
+          <div class="fl"><div class="lbl">Join Code</div>
+            <input class="inp" id="su-code" placeholder="ABC123" maxlength="6" style="font-family:monospace;font-size:20px;letter-spacing:4px;text-transform:uppercase"/>
+          </div>
+        </div>
+
+        <div class="err-box hidden" id="su-err"></div>
+        <button class="btn-primary" id="su-btn" onclick="doSignUp()">Create Account</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ SETUP (no org yet) ══════════ -->
+<div id="screen-setup" class="hidden">
+  <div class="setup-card">
+    <div>
+      <div style="font-size:22px;font-weight:800;letter-spacing:-.5px;margin-bottom:5px">Set up workspace</div>
+      <div style="font-size:12px;color:var(--t2)">You need an organization to continue.</div>
+    </div>
+    <div class="setup-tabs">
+      <button class="setup-tab on" id="st-create" onclick="setupTab('create')">Create Organization</button>
+      <button class="setup-tab" id="st-join" onclick="setupTab('join')">Join with Code</button>
+    </div>
+    <div id="sf-create">
+      <div class="fl" style="margin-bottom:14px"><div class="lbl">Organization Name</div><input class="inp" id="sp-orgname" placeholder="My Company…"/></div>
+      <button class="btn-primary" onclick="doCreateOrg()">Create Organization →</button>
+    </div>
+    <div id="sf-join" class="hidden">
+      <div class="fl" style="margin-bottom:14px"><div class="lbl">6-Character Join Code</div>
+        <input class="inp" id="sp-code" placeholder="ABC123" maxlength="6" style="font-family:monospace;font-size:20px;letter-spacing:4px;text-transform:uppercase"/>
+      </div>
+      <button class="btn-primary" onclick="doJoinOrg()">Join Organization →</button>
+    </div>
+    <button class="btn-secondary" onclick="doSignOut()">← Sign Out</button>
+  </div>
+</div>
+
+<!-- ══════════ APP ══════════ -->
+<div id="screen-app">
+
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <div class="sb-logo">
+      <span class="sb-logo-text">Monit<span>ro</span></span>
+      <span class="role-pill" id="sb-role-pill">member</span>
+    </div>
+    <div class="sb-org">
+      <div class="sb-org-name">
+        <span id="sb-org-name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">Org</span>
+        <span class="sb-org-code" id="sb-org-code" onclick="copyCode()" title="Click to copy code">——</span>
+      </div>
+    </div>
+    <div class="sb-nav">
+      <div class="sb-section">Overview</div>
+      <div class="nav-item on" id="nav-dashboard" onclick="goPage('dashboard')"><span class="nav-icon">📊</span>Dashboard</div>
+      <div class="nav-item" id="nav-screens" onclick="goPage('screens')"><span class="nav-icon">🖥️</span>Screens</div>
+
+      <div class="sb-section">Monitor</div>
+      <div class="nav-item" id="nav-members" onclick="goPage('members')"><span class="nav-icon">👥</span>Members</div>
+      <div class="nav-item" id="nav-attendance" onclick="goPage('attendance')"><span class="nav-icon">📅</span>Attendance</div>
+      <div class="nav-item" id="nav-rewards" onclick="goPage('rewards')"><span class="nav-icon">🏆</span>Rewards</div>
+
+      <div class="sb-section">Account</div>
+      <div class="nav-item" id="nav-settings" onclick="goPage('settings')"><span class="nav-icon">⚙️</span>Settings</div>
+      <div class="nav-item" onclick="doSignOut()"><span class="nav-icon">🚪</span>Sign Out</div>
+    </div>
+    <div class="sb-footer">
+      <div class="user-pill">
+        <div class="av" id="sb-av" style="background:var(--acc)">?</div>
+        <div>
+          <div class="u-name" id="sb-name">Loading…</div>
+          <div class="u-role" id="sb-urole">—</div>
+        </div>
+        <div class="online-dot"></div>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main -->
+  <div class="main-area">
+    <div class="topbar">
+      <div>
+        <div class="top-title" id="page-title">Dashboard</div>
+        <div class="top-sub" id="page-sub">Organization overview</div>
+      </div>
+      <div class="top-actions" id="top-actions"></div>
+    </div>
+
+    <!-- ── PAGE: DASHBOARD ── -->
+    <div class="page" id="page-dashboard">
+      <div class="stats-row" id="dash-stats"></div>
+      <div id="dash-extra"></div>
+    </div>
+
+    <!-- ── PAGE: SCREENS ── -->
+    <div class="page hidden" id="page-screens">
+      <!-- My share panel (shown for all) -->
+      <div class="share-panel" id="my-share-panel">
+        <div class="share-header">
+          <div>
+            <div class="share-title">My Screen Share</div>
+            <div class="share-sub" id="share-status-text">Not sharing</div>
+          </div>
+          <div id="share-rec-dot" class="rec-dot hidden"></div>
+          <div style="margin-left:auto;display:flex;gap:8px" id="share-btns">
+            <button class="btn-primary" style="width:auto;padding:9px 18px" id="start-share-btn" onclick="startShare()">🖥️ Start Sharing</button>
+          </div>
+        </div>
+        <video id="my-preview" class="share-preview hidden" autoplay muted playsinline></video>
+      </div>
+      <!-- Viewer grid -->
+      <div id="screens-title" style="font-size:13px;font-weight:700;margin-bottom:14px;color:var(--t2)"></div>
+      <div class="viewer-grid" id="viewer-grid"></div>
+    </div>
+
+    <!-- ── PAGE: MEMBERS ── -->
+    <div class="page hidden" id="page-members">
+      <div class="sec-card">
+        <div class="sec-head">
+          <div>
+            <div class="sec-title">Team Members</div>
+            <div class="sec-sub" id="members-count-sub">Loading…</div>
+          </div>
+          <div style="margin-left:auto;display:flex;gap:8px" id="members-top-actions"></div>
+        </div>
+        <div style="padding:0">
+          <table style="width:100%;border-collapse:collapse;font-size:13px" id="members-table">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:9px 16px;border-bottom:1px solid var(--b1);font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--t3)">Member</th>
+                <th style="text-align:left;padding:9px 16px;border-bottom:1px solid var(--b1);font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--t3)">Role</th>
+                <th style="text-align:left;padding:9px 16px;border-bottom:1px solid var(--b1);font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--t3)">Status</th>
+                <th style="text-align:left;padding:9px 16px;border-bottom:1px solid var(--b1);font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--t3)">Last seen</th>
+                <th style="text-align:left;padding:9px 16px;border-bottom:1px solid var(--b1);font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--t3)">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="members-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PAGE: ATTENDANCE ── -->
+    <div class="page hidden" id="page-attendance">
+      <div id="top-attend-card"></div>
+      <div class="sec-card">
+        <div class="sec-head">
+          <div>
+            <div class="sec-title">Attendance Log</div>
+            <div class="sec-sub" id="attend-month-sub">This month</div>
+          </div>
+          <div style="margin-left:auto;display:flex;gap:8px">
+            <button class="btn-sm" onclick="loadAttendance()">↻ Refresh</button>
+          </div>
+        </div>
+        <div style="padding:0">
+          <table class="attend-table" id="attend-table">
+            <thead>
+              <tr>
+                <th>Member</th>
+                <th>Days Present</th>
+                <th>Progress</th>
+                <th>Last Present</th>
+                <th>Rank</th>
+              </tr>
+            </thead>
+            <tbody id="attend-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── PAGE: REWARDS ── -->
+    <div class="page hidden" id="page-rewards">
+      <div id="rewards-content"></div>
+    </div>
+
+    <!-- ── PAGE: SETTINGS ── -->
+    <div class="page hidden" id="page-settings">
+      <div class="sec-card" style="margin-bottom:20px">
+        <div class="sec-head"><div class="sec-title">Organization Settings</div></div>
+        <div class="sec-body">
+          <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">
+            <div>
+              <div style="font-size:13px;font-weight:700;margin-bottom:4px" id="settings-org-name">—</div>
+              <div style="font-size:12px;color:var(--t3)">Organization name</div>
+            </div>
+          </div>
+          <div style="margin-bottom:16px">
+            <div class="lbl" style="margin-bottom:8px">Your Join Code</div>
+            <div class="code-big" id="settings-code" onclick="copyCode()">——</div>
+            <div style="font-size:11px;color:var(--t3);text-align:center;margin-top:6px">Click to copy · Share with new members</div>
+          </div>
+          <div id="leave-org-section">
+            <button class="btn-danger" onclick="openLeaveModal()">🚪 Leave Organization</button>
+          </div>
+        </div>
+      </div>
+      <div class="sec-card">
+        <div class="sec-head"><div class="sec-title">My Account</div></div>
+        <div class="sec-body" id="settings-account"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODALS ── -->
+<div class="modal-overlay hidden" id="modal-invite">
+  <div class="modal">
+    <div class="modal-title">📨 Invite Members</div>
+    <div>
+      <div class="lbl" style="margin-bottom:8px">Share this code with your team</div>
+      <div class="code-big" id="modal-code" onclick="copyCode()">——</div>
+      <div style="font-size:11px;color:var(--t3);text-align:center;margin-top:6px">Click to copy</div>
+    </div>
+    <div class="info-box">Members go to the signup page, choose "Join Org", and enter this code.</div>
+    <div class="modal-actions"><button class="btn-secondary" onclick="closeModal('modal-invite')">Close</button></div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="modal-leave">
+  <div class="modal">
+    <div class="modal-title">Leave Organization?</div>
+    <div style="font-size:13px;color:var(--t2);line-height:1.6">You'll lose access to the organization. You can join a new one or create your own. This cannot be undone.</div>
+    <div id="leave-warning" class="err-box hidden">Managers cannot leave — transfer ownership first or kick all members.</div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('modal-leave')">Cancel</button>
+      <button class="btn-danger" onclick="doLeaveOrg()">Leave Organization</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="modal-reward">
+  <div class="modal">
+    <div class="modal-title">🏆 Give Monthly Reward</div>
+    <div class="fl"><div class="lbl">Select Winner</div>
+      <select class="inp" id="reward-winner"></select>
+    </div>
+    <div class="fl"><div class="lbl">Month</div>
+      <input class="inp" id="reward-month" placeholder="e.g. June 2025"/>
+    </div>
+    <div class="fl"><div class="lbl">Reward Note (optional)</div>
+      <input class="inp" id="reward-note" placeholder="e.g. Most dedicated team member"/>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('modal-reward')">Cancel</button>
+      <button class="btn-primary" style="width:auto;padding:10px 20px" onclick="doGiveReward()">Give Reward 🎉</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay hidden" id="modal-kick">
+  <div class="modal">
+    <div class="modal-title">Remove Member?</div>
+    <div style="font-size:13px;color:var(--t2);line-height:1.6">Are you sure you want to remove <strong id="kick-name"></strong> from the organization?</div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('modal-kick')">Cancel</button>
+      <button class="btn-danger" onclick="confirmKick()">Remove Member</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════
+//  CONFIG — Replace with your Supabase values
+// ════════════════════════════════════════════════════
+const SUPABASE_URL      = 'https://YOUR_PROJECT.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY_HERE';
+
+// ── INIT ──────────────────────────────────────────────
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// State
+let ME = null;          // current profile
+let MY_ORG = null;      // current organization
+let ORG_MEMBERS = [];   // all members in org
+let kickTargetId = null;
+
+// WebRTC / Screen share
+let localStream = null;
+let peerConnections = {}; // userId → RTCPeerConnection
+let signalingChannel = null;
+
+// ── DOM HELPERS ──────────────────────────────────────
+const $ = id => document.getElementById(id);
+const show = id => $(id).classList.remove('hidden');
+const hide = id => $(id).classList.add('hidden');
+const isHidden = id => $(id).classList.contains('hidden');
+
+function toast(msg, type = 'info') {
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.textContent = msg;
+  $('toast-wrap').appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+function avatar(name, size = '') {
+  const ini = (name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const colors = ['#6c63ff','#3ecfcf','#ff6584','#f97316','#22d3a0','#f5c542'];
+  const bg = colors[(name || 'U').charCodeAt(0) % colors.length];
+  return `<div class="av ${size}" style="background:${bg}">${ini}</div>`;
+}
+
+function roleBadge(role) {
+  const map = {
+    manager: '<span class="bdg bdg-purple">👑 manager</span>',
+    co_manager: '<span class="bdg bdg-orange">⭐ co-manager</span>',
+    member: '<span class="bdg bdg-blue">👤 member</span>',
+  };
+  return map[role] || `<span class="bdg">${role}</span>`;
+}
+
+function canManage() { return ME?.role === 'manager' || ME?.role === 'co_manager'; }
+function isManager() { return ME?.role === 'manager'; }
+
+// ── AUTH TAB ──────────────────────────────────────────
+function authTab(tab) {
+  $('tab-signin').classList.toggle('on', tab === 'signin');
+  $('tab-signup').classList.toggle('on', tab === 'signup');
+  tab === 'signin' ? show('form-signin') : hide('form-signin');
+  tab === 'signup' ? show('form-signup') : hide('form-signup');
+}
+
+function togglePwd(inputId, btnId) {
+  const inp = $(inputId);
+  const showing = inp.type === 'text';
+  inp.type = showing ? 'password' : 'text';
+  $(btnId).textContent = showing ? '👁️' : '🙈';
+}
+
+function pickOrgType(type) {
+  $('opc-create').classList.toggle('sel', type === 'create');
+  $('opc-join').classList.toggle('sel', type === 'join');
+  $('ofc').classList.toggle('show', type === 'create');
+  $('ofj').classList.toggle('show', type === 'join');
+}
+
+// ── SIGN IN ───────────────────────────────────────────
+async function doSignIn() {
+  const email = $('si-email').value.trim();
+  const pass  = $('si-pass').value;
+  hide('si-err');
+  if (!email || !pass) { showErr('si-err', 'Fill in all fields.'); return; }
+
+  setLoading('si-btn', 'Signing in…');
+  const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+  clearLoading('si-btn', 'Sign In');
+
+  if (error) { showErr('si-err', error.message); return; }
+  // onAuthStateChange will handle the rest
+}
+
+// ── SIGN UP ───────────────────────────────────────────
+async function doSignUp() {
+  const name     = $('su-name').value.trim();
+  const email    = $('su-email').value.trim();
+  const pass     = $('su-pass').value;
+  const orgType  = $('opc-join').classList.contains('sel') ? 'join' : 'create';
+  const orgName  = $('su-orgname').value.trim();
+  const orgCode  = $('su-code').value.trim().toUpperCase();
+  hide('su-err');
+
+  if (!name) { showErr('su-err', 'Enter your full name.'); return; }
+  if (!email || !email.includes('@')) { showErr('su-err', 'Enter a valid email.'); return; }
+  if (pass.length < 8) { showErr('su-err', 'Password must be 8+ characters.'); return; }
+  if (orgType === 'create' && !orgName) { showErr('su-err', 'Enter an organization name.'); return; }
+  if (orgType === 'join' && orgCode.length !== 6) { showErr('su-err', 'Enter a valid 6-character join code.'); return; }
+
+  setLoading('su-btn', 'Creating account…');
+
+  const { data: authData, error: authErr } = await sb.auth.signUp({
+    email, password: pass, options: { data: { full_name: name } }
+  });
+  if (authErr) { clearLoading('su-btn', 'Create Account'); showErr('su-err', authErr.message); return; }
+
+  const userId = authData.user?.id;
+  if (!userId) { clearLoading('su-btn', 'Create Account'); showErr('su-err', 'Signup failed. Try again.'); return; }
+
+  // Upsert profile
+  await sb.from('profiles').upsert({ id: userId, full_name: name, email, role: orgType === 'create' ? 'manager' : 'member' });
+
+  if (orgType === 'create') {
+    const code = randCode();
+    const { data: org, error: orgErr } = await sb.from('organizations').insert({ name: orgName, code, created_by: userId }).select().single();
+    if (orgErr) { clearLoading('su-btn', 'Create Account'); showErr('su-err', 'Could not create org: ' + orgErr.message); return; }
+    await sb.from('profiles').update({ organization_id: org.id, role: 'manager' }).eq('id', userId);
+  } else {
+    const { data: org } = await sb.from('organizations').select('id').eq('code', orgCode).single();
+    if (!org) { clearLoading('su-btn', 'Create Account'); showErr('su-err', 'Organization code not found.'); return; }
+    await sb.from('profiles').update({ organization_id: org.id, role: 'member' }).eq('id', userId);
+  }
+
+  clearLoading('su-btn', 'Create Account');
+  toast('Account created! Check your email to confirm, then sign in.', 'success');
+  authTab('signin');
+}
+
+// ── AUTH STATE ────────────────────────────────────────
+sb.auth.onAuthStateChange(async (event, session) => {
+  if (session?.user) {
+    await loadSession(session.user);
+  } else {
+    showScreen('auth');
+  }
+});
+
+async function loadSession(user) {
+  // Wait briefly for trigger to create profile
+  await delay(400);
+  let { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).single();
+
+  if (!profile) {
+    // Create if missing
+    const name = user.user_metadata?.full_name || user.email.split('@')[0];
+    await sb.from('profiles').upsert({ id: user.id, full_name: name, email: user.email });
+    profile = { id: user.id, full_name: name, email: user.email, role: 'member', organization_id: null };
+  }
+
+  ME = profile;
+
+  // Mark online
+  await sb.from('profiles').update({ is_online: true, last_seen: new Date().toISOString() }).eq('id', ME.id);
+
+  if (!ME.organization_id) {
+    showScreen('setup');
+    return;
+  }
+
+  // Load org
+  const { data: org } = await sb.from('organizations').select('*').eq('id', ME.organization_id).single();
+  MY_ORG = org;
+
+  await loadOrgMembers();
+  showApp();
+  subscribeRealtime();
+}
+
+// ── SETUP SCREEN ──────────────────────────────────────
+function setupTab(tab) {
+  $('st-create').classList.toggle('on', tab === 'create');
+  $('st-join').classList.toggle('on', tab === 'join');
+  tab === 'create' ? show('sf-create') : hide('sf-create');
+  tab === 'join'   ? show('sf-join') : hide('sf-join');
+}
+
+async function doCreateOrg() {
+  const name = $('sp-orgname').value.trim();
+  if (!name) { toast('Enter an organization name.', 'error'); return; }
+  const code = randCode();
+  const { data: org, error } = await sb.from('organizations').insert({ name, code, created_by: ME.id }).select().single();
+  if (error) { toast('Error: ' + error.message, 'error'); return; }
+  await sb.from('profiles').update({ organization_id: org.id, role: 'manager' }).eq('id', ME.id);
+  ME.organization_id = org.id; ME.role = 'manager';
+  MY_ORG = org;
+  await loadOrgMembers();
+  showApp();
+  toast('Organization created! Code: ' + code, 'success');
+}
+
+async function doJoinOrg() {
+  const code = $('sp-code').value.trim().toUpperCase();
+  if (code.length !== 6) { toast('Enter a 6-character code.', 'error'); return; }
+  const { data: org } = await sb.from('organizations').select('*').eq('code', code).single();
+  if (!org) { toast('Organization not found. Check the code.', 'error'); return; }
+  await sb.from('profiles').update({ organization_id: org.id, role: 'member' }).eq('id', ME.id);
+  ME.organization_id = org.id; ME.role = 'member';
+  MY_ORG = org;
+  await loadOrgMembers();
+  showApp();
+  toast('Joined ' + org.name + '!', 'success');
+}
+
+async function doLeaveOrg() {
+  if (isManager() && ORG_MEMBERS.filter(m => m.id !== ME.id).length > 0) {
+    show('leave-warning'); return;
+  }
+  await sb.from('profiles').update({ organization_id: null, role: 'member', is_online: false, is_sharing: false }).eq('id', ME.id);
+  ME.organization_id = null; ME.role = 'member'; MY_ORG = null;
+  closeModal('modal-leave');
+  toast('You left the organization.', 'info');
+  showScreen('setup');
+}
+
+// ── SHOW APP ──────────────────────────────────────────
+function showApp() {
+  showScreen('app');
+  // Sidebar
+  const ini = (ME.full_name || 'U').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  const colors = ['#6c63ff','#3ecfcf','#ff6584','#f97316','#22d3a0','#f5c542'];
+  const bg = colors[(ME.full_name || 'U').charCodeAt(0) % colors.length];
+  $('sb-av').textContent = ini; $('sb-av').style.background = bg;
+  $('sb-name').textContent = ME.full_name || ME.email;
+  $('sb-urole').textContent = ME.role;
+  $('sb-role-pill').textContent = ME.role;
+  $('sb-org-name').textContent = MY_ORG?.name || 'My Org';
+  $('sb-org-code').textContent = MY_ORG?.code || '——';
+  // Settings
+  $('settings-org-name').textContent = MY_ORG?.name || '—';
+  $('settings-code').textContent = MY_ORG?.code || '——';
+  $('modal-code').textContent = MY_ORG?.code || '——';
+  // Account info
+  $('settings-account').innerHTML = `
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+      ${avatar(ME.full_name, 'lg')}
+      <div><div style="font-weight:700;margin-bottom:3px">${ME.full_name}</div><div style="font-size:12px;color:var(--t3)">${ME.email}</div></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      ${roleBadge(ME.role)}
+      <span style="font-size:12px;color:var(--t3)">in ${MY_ORG?.name}</span>
+    </div>`;
+  // Manager-only nav
+  if (!canManage()) {
+    // members can still see screens tab
+  }
+  goPage('dashboard');
+}
+
+// ── NAVIGATION ────────────────────────────────────────
+function goPage(pg) {
+  ['dashboard','screens','members','attendance','rewards','settings'].forEach(p => {
+    $('page-' + p).classList.add('hidden');
+    $('nav-' + p)?.classList.remove('on');
+  });
+  $('page-' + pg).classList.remove('hidden');
+  $('nav-' + pg)?.classList.add('on');
+
+  const titles = {
+    dashboard: ['Dashboard', 'Organization overview · Live'],
+    screens:   ['Screens', 'Live screen sharing'],
+    members:   ['Members', 'Team management'],
+    attendance:['Attendance', 'Monthly tracking'],
+    rewards:   ['Rewards', 'Top performers this month'],
+    settings:  ['Settings', 'Organization & account'],
+  };
+  if (titles[pg]) { $('page-title').textContent = titles[pg][0]; $('page-sub').textContent = titles[pg][1]; }
+
+  $('top-actions').innerHTML = '';
+
+  if (pg === 'dashboard') renderDashboard();
+  if (pg === 'screens') renderScreens();
+  if (pg === 'members') renderMembers();
+  if (pg === 'attendance') loadAttendance();
+  if (pg === 'rewards') loadRewards();
+  if (pg === 'settings') renderSettings();
+}
+
+// ── LOAD ORG MEMBERS ─────────────────────────────────
+async function loadOrgMembers() {
+  if (!ME?.organization_id) return;
+  const { data } = await sb.from('profiles').select('*').eq('organization_id', ME.organization_id);
+  ORG_MEMBERS = data || [];
+}
+
+// ── DASHBOARD ─────────────────────────────────────────
+function renderDashboard() {
+  const total = ORG_MEMBERS.length;
+  const online = ORG_MEMBERS.filter(m => m.is_online).length;
+  const sharing = ORG_MEMBERS.filter(m => m.is_sharing).length;
+  const offline = total - online;
+
+  $('dash-stats').innerHTML = `
+    <div class="stat-card" style="--sc-color:var(--acc2)">
+      <div class="sc-label">Total Members</div>
+      <div class="sc-value">${total}</div>
+      <div class="sc-sub">In organization</div>
+    </div>
+    <div class="stat-card" style="--sc-color:var(--grn)">
+      <div class="sc-label">Online Now</div>
+      <div class="sc-value" style="color:var(--grn)">${online}</div>
+      <div class="sc-sub">${offline} offline</div>
+    </div>
+    <div class="stat-card" style="--sc-color:var(--acc)">
+      <div class="sc-label">Sharing Screen</div>
+      <div class="sc-value" style="color:var(--acc)">${sharing}</div>
+      <div class="sc-sub">Active streams</div>
+    </div>
+    <div class="stat-card" style="--sc-color:var(--ylw)">
+      <div class="sc-label">Org Code</div>
+      <div class="sc-value" style="font-size:18px;padding-top:6px;font-family:monospace;color:var(--ylw);cursor:pointer;letter-spacing:3px" onclick="copyCode()">${MY_ORG?.code || '——'}</div>
+      <div class="sc-sub">Click to copy</div>
+    </div>
+  `;
+
+  const members = ORG_MEMBERS.filter(m => m.id !== ME.id);
+  if (!members.length) {
+    $('dash-extra').innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">No other members yet</div><div class="empty-sub">Share your code <strong>${MY_ORG?.code}</strong> to invite people.</div></div>`;
+    return;
+  }
+
+  $('dash-extra').innerHTML = `
+    <div style="font-size:13px;font-weight:700;margin-bottom:14px;color:var(--t2)">Team Members</div>
+    <div class="member-grid">
+      ${ORG_MEMBERS.map(m => {
+        const isOnline = m.is_online;
+        const isSharing = m.is_sharing;
+        return `<div class="member-card ${isSharing ? 'sharing' : ''}">
+          <div class="mc-head">
+            <div style="position:relative">${avatar(m.full_name)}
+              <div class="mc-status ${isSharing ? 'sharing' : isOnline ? 'online' : 'offline'}"></div>
+            </div>
+            <div>
+              <div class="mc-name">${m.full_name || '—'} ${m.id === ME.id ? '<span style="font-size:10px;color:var(--t3)">(you)</span>' : ''}</div>
+              <div class="mc-email">${m.email || ''}</div>
+            </div>
+            <div style="margin-left:auto">${roleBadge(m.role)}</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <span class="bdg ${isSharing ? 'bdg-blue' : isOnline ? 'bdg-green' : 'bdg-red'}">${isSharing ? '📺 sharing' : isOnline ? '● online' : '○ offline'}</span>
+            ${m.last_seen ? `<span class="bdg" style="background:var(--s3);color:var(--t3)">${timeAgo(m.last_seen)}</span>` : ''}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+
+  // Manager: show invite button
+  if (canManage()) {
+    $('top-actions').innerHTML = `<button class="btn-sm on" onclick="openModal('modal-invite')">📨 Invite Members</button>`;
+  }
+}
+
+// ── SCREENS PAGE ──────────────────────────────────────
+function renderScreens() {
+  // My share controls
+  if (ME.is_sharing) {
+    $('share-status-text').textContent = 'You are sharing your screen live';
+    show('share-rec-dot');
+    $('share-btns').innerHTML = `<button class="btn-danger" onclick="stopShare()">⏹ Stop Sharing</button>`;
+    show('my-preview');
+  } else {
+    $('share-status-text').textContent = 'Not sharing';
+    hide('share-rec-dot');
+    $('share-btns').innerHTML = `<button class="btn-primary" style="width:auto;padding:9px 18px" onclick="startShare()">🖥️ Start Sharing</button>`;
+    hide('my-preview');
+  }
+
+  // Determine who can see whom
+  // Manager/Co-manager: see everyone's screen
+  // Member: see only manager & co-manager screens
+  const isViewerPrivileged = canManage();
+
+  let viewable = ORG_MEMBERS.filter(m => m.id !== ME.id);
+  if (!isViewerPrivileged) {
+    // Members only see managers/co-managers screens
+    viewable = viewable.filter(m => m.role === 'manager' || m.role === 'co_manager');
+  }
+
+  $('screens-title').textContent = isViewerPrivileged
+    ? `All Screens (${viewable.length} members)`
+    : `Manager Screens`;
+
+  if (!viewable.length) {
+    $('viewer-grid').innerHTML = `<div class="empty-state" style="grid-column:1/-1">
+      <div class="empty-icon">🖥️</div>
+      <div class="empty-title">${isViewerPrivileged ? 'No other members' : 'No manager screens available'}</div>
+      <div class="empty-sub">Screens will appear here when members start sharing.</div>
+    </div>`;
+    return;
+  }
+
+  $('viewer-grid').innerHTML = viewable.map(m => `
+    <div class="viewer-tile ${m.is_sharing ? 'active-share' : ''}" id="tile-${m.id}">
+      <div class="tile-header">
+        ${avatar(m.full_name, 'sm')}
+        <div class="tile-name">${m.full_name || '—'} ${roleBadge(m.role)}</div>
+        <span class="tile-badge ${m.is_sharing ? 'live' : 'offline'}">${m.is_sharing ? '🔴 LIVE' : 'offline'}</span>
+      </div>
+      ${m.is_sharing
+        ? `<video id="video-${m.id}" class="tile-video" autoplay playsinline></video>`
+        : `<div class="tile-placeholder"><div class="ph-icon">🖥️</div><div class="ph-text">Not sharing</div></div>`}
+      <div class="tile-footer">${m.email} · ${timeAgo(m.last_seen)}</div>
+    </div>`).join('');
+}
+
+// Screen Share (WebRTC skeleton — works in same-browser demo; full peer-to-peer needs signaling server)
+async function startShare() {
+  try {
+    localStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    $('my-preview').srcObject = localStream;
+    show('my-preview');
+    $('share-status-text').textContent = 'You are sharing your screen live';
+    show('share-rec-dot');
+    $('share-btns').innerHTML = `<button class="btn-danger" onclick="stopShare()">⏹ Stop Sharing</button>`;
+
+    await sb.from('profiles').update({ is_sharing: true }).eq('id', ME.id);
+    ME.is_sharing = true;
+
+    // Auto attendance on share start
+    await markAttendance();
+
+    localStream.getVideoTracks()[0].onended = () => stopShare();
+    toast('Screen sharing started!', 'success');
+  } catch (err) {
+    if (err.name !== 'NotAllowedError') toast('Could not share screen: ' + err.message, 'error');
+  }
+}
+
+async function stopShare() {
+  if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+  hide('my-preview');
+  $('share-status-text').textContent = 'Not sharing';
+  hide('share-rec-dot');
+  $('share-btns').innerHTML = `<button class="btn-primary" style="width:auto;padding:9px 18px" onclick="startShare()">🖥️ Start Sharing</button>`;
+  await sb.from('profiles').update({ is_sharing: false }).eq('id', ME.id);
+  ME.is_sharing = false;
+  toast('Screen sharing stopped.', 'info');
+}
+
+// Auto-attendance when sharing starts
+async function markAttendance() {
+  if (!ME?.organization_id) return;
+  const today = new Date().toISOString().split('T')[0];
+  await sb.from('attendance').upsert({
+    user_id: ME.id,
+    organization_id: ME.organization_id,
+    date: today,
+    first_share_at: new Date().toISOString(),
+  }, { onConflict: 'user_id,date' });
+}
+
+// ── MEMBERS PAGE ──────────────────────────────────────
+function renderMembers() {
+  const total = ORG_MEMBERS.length;
+  $('members-count-sub').textContent = `${total} member${total !== 1 ? 's' : ''} in organization`;
+
+  if (canManage()) {
+    $('members-top-actions').innerHTML = `<button class="btn-sm on" onclick="openModal('modal-invite')">📨 Invite</button>`;
+  } else {
+    $('members-top-actions').innerHTML = '';
+  }
+
+  $('members-tbody').innerHTML = ORG_MEMBERS.map(m => {
+    const isSelf = m.id === ME.id;
+    const isOnline = m.is_online;
+
+    let actions = '';
+    if (!isSelf && canManage()) {
+      actions += `<button class="btn-danger" onclick="openKickModal('${m.id}','${escHtml(m.full_name || '')}')">Kick</button> `;
+      if (isManager()) {
+        if (m.role === 'member') {
+          actions += `<button class="btn-warn" onclick="changeRole('${m.id}','co_manager')">→ Co-Manager</button> `;
+        }
+        if (m.role === 'co_manager') {
+          actions += `<button class="btn-sm" onclick="changeRole('${m.id}','member')">→ Member</button> `;
+        }
+      }
+    }
+    if (isSelf) actions = '<span style="font-size:11px;color:var(--t3)">You</span>';
+
+    return `<tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:10px">
+          ${avatar(m.full_name, 'sm')}
+          <div>
+            <div style="font-weight:700;font-size:13px">${m.full_name || '—'}</div>
+            <div style="font-size:11px;color:var(--t3);font-family:monospace">${m.email}</div>
+          </div>
+        </div>
+      </td>
+      <td>${roleBadge(m.role)}</td>
+      <td><span class="bdg ${isOnline ? 'bdg-green' : 'bdg-red'}">${isOnline ? '● online' : '○ offline'}</span></td>
+      <td style="font-size:11px;color:var(--t3);font-family:monospace">${timeAgo(m.last_seen)}</td>
+      <td><div style="display:flex;gap:5px;flex-wrap:wrap">${actions}</div></td>
+    </tr>`;
+  }).join('');
+}
+
+async function changeRole(userId, newRole) {
+  const { error } = await sb.from('profiles').update({ role: newRole }).eq('id', userId);
+  if (error) { toast('Error: ' + error.message, 'error'); return; }
+  await loadOrgMembers();
+  renderMembers();
+  toast(`Role updated to ${newRole}.`, 'success');
+}
+
+function openKickModal(id, name) {
+  kickTargetId = id;
+  $('kick-name').textContent = name;
+  openModal('modal-kick');
+}
+
+async function confirmKick() {
+  if (!kickTargetId) return;
+  await sb.from('profiles').update({ organization_id: null, role: 'member', is_online: false, is_sharing: false }).eq('id', kickTargetId);
+  closeModal('modal-kick');
+  await loadOrgMembers();
+  renderMembers();
+  toast('Member removed from organization.', 'success');
+  kickTargetId = null;
+}
+
+// ── ATTENDANCE ────────────────────────────────────────
+async function loadAttendance() {
+  const now = new Date();
+  const month = now.toLocaleString('default', { month: 'long', year: 'numeric' });
+  $('attend-month-sub').textContent = month;
+
+  // Get attendance for all org members this month
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  const { data: records } = await sb.from('attendance')
+    .select('*, profiles(full_name, email)')
+    .eq('organization_id', ME.organization_id)
+    .gte('date', startOfMonth)
+    .order('date', { ascending: false });
+
+  // Group by user
+  const byUser = {};
+  (records || []).forEach(r => {
+    const uid = r.user_id;
+    if (!byUser[uid]) byUser[uid] = { name: r.profiles?.full_name || '—', email: r.profiles?.email || '', days: 0, lastDate: null };
+    byUser[uid].days++;
+    if (!byUser[uid].lastDate || r.date > byUser[uid].lastDate) byUser[uid].lastDate = r.date;
+  });
+
+  // Also include org members with 0 days
+  ORG_MEMBERS.forEach(m => {
+    if (!byUser[m.id]) byUser[m.id] = { name: m.full_name || '—', email: m.email || '', days: 0, lastDate: null };
+  });
+
+  const sorted = Object.values(byUser).sort((a, b) => b.days - a.days);
+  const maxDays = sorted[0]?.days || 1;
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+
+  // Top card
+  const winner = sorted[0];
+  if (winner && winner.days > 0) {
+    $('top-attend-card').innerHTML = `
+      <div class="reward-card" style="margin-bottom:20px">
+        <div class="reward-trophy">👑</div>
+        <div class="reward-info">
+          <div class="reward-title">${winner.name} is leading!</div>
+          <div class="reward-sub">${winner.days} days present in ${month}. Keep it up! The month's top performer wins the reward. 🏆</div>
+        </div>
+      </div>`;
+  } else {
+    $('top-attend-card').innerHTML = '';
+  }
+
+  $('attend-tbody').innerHTML = sorted.map((u, i) => `
+    <tr>
+      <td>
+        <div style="display:flex;align-items:center;gap:9px">
+          ${avatar(u.name, 'sm')}
+          <div>
+            <div style="font-weight:700;font-size:13px">${u.name}</div>
+            <div style="font-size:11px;color:var(--t3);font-family:monospace">${u.email}</div>
+          </div>
+        </div>
+      </td>
+      <td>
+        <span style="font-size:18px;font-weight:800;font-family:monospace;color:${u.days >= daysInMonth * 0.8 ? 'var(--grn)' : u.days === 0 ? 'var(--acc3)' : 'var(--t1)'}">${u.days}</span>
+        <span style="font-size:11px;color:var(--t3)"> / ${daysInMonth} days</span>
+      </td>
+      <td>
+        <div class="attend-bar" style="width:100px">
+          <div class="attend-fill" style="width:${Math.round((u.days/daysInMonth)*100)}%"></div>
+        </div>
+      </td>
+      <td style="font-size:11px;color:var(--t3);font-family:monospace">${u.lastDate ? u.lastDate : '—'}</td>
+      <td>
+        ${i === 0 && u.days > 0 ? '<span class="crown">👑</span>' : i === 1 ? '🥈' : i === 2 ? '🥉' : `<span style="color:var(--t3);font-size:12px">#${i+1}</span>`}
+      </td>
+    </tr>`).join('') || `<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">📅</div><div class="empty-title">No attendance yet</div><div class="empty-sub">Members are marked present automatically when they start sharing their screen.</div></div></td></tr>`;
+}
+
+// ── REWARDS ───────────────────────────────────────────
+async function loadRewards() {
+  const { data: rewards } = await sb.from('rewards')
+    .select('*, profiles!rewards_winner_id_fkey(full_name, email), givenBy:profiles!rewards_given_by_fkey(full_name)')
+    .eq('organization_id', ME.organization_id)
+    .order('given_at', { ascending: false });
+
+  let html = '';
+
+  if (canManage()) {
+    $('top-actions').innerHTML = `<button class="btn-sm on" onclick="openRewardModal()">🏆 Give Reward</button>`;
+  }
+
+  if (!rewards?.length) {
+    html = `<div class="empty-state"><div class="empty-icon">🏆</div><div class="empty-title">No rewards given yet</div><div class="empty-sub">At the end of each month, managers give a reward to the top attendance member.</div></div>`;
+  } else {
+    html = rewards.map((r, i) => `
+      <div class="reward-card" style="margin-bottom:14px">
+        <div class="reward-trophy">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</div>
+        <div class="reward-info">
+          <div class="reward-title">${r.profiles?.full_name || '—'} — ${r.month}</div>
+          <div class="reward-sub">
+            ${r.reward_note ? `"${r.reward_note}"` : 'Most days present'}<br/>
+            Given by ${r.givenBy?.full_name || 'Manager'} · ${new Date(r.given_at).toLocaleDateString()}
+            ${r.attendance_days ? ` · ${r.attendance_days} days` : ''}
+          </div>
+        </div>
+      </div>`).join('');
+  }
+
+  $('rewards-content').innerHTML = html;
+}
+
+async function openRewardModal() {
+  // Populate winner select
+  $('reward-winner').innerHTML = ORG_MEMBERS
+    .filter(m => m.id !== ME.id)
+    .map(m => `<option value="${m.id}">${m.full_name || m.email}</option>`)
+    .join('');
+  const now = new Date();
+  $('reward-month').value = now.toLocaleString('default', { month: 'long', year: 'numeric' });
+  openModal('modal-reward');
+}
+
+async function doGiveReward() {
+  const winnerId = $('reward-winner').value;
+  const month = $('reward-month').value.trim();
+  const note = $('reward-note').value.trim();
+  if (!winnerId || !month) { toast('Select a winner and month.', 'error'); return; }
+
+  // Get attendance days for winner this month
+  const startOfMonth = new Date().toISOString().slice(0, 7) + '-01';
+  const { data: att } = await sb.from('attendance').select('id').eq('user_id', winnerId).gte('date', startOfMonth);
+
+  await sb.from('rewards').insert({
+    organization_id: ME.organization_id,
+    winner_id: winnerId,
+    month,
+    attendance_days: att?.length || 0,
+    reward_note: note || null,
+    given_by: ME.id,
+  });
+
+  closeModal('modal-reward');
+  toast('Reward given! 🎉', 'success');
+  loadRewards();
+}
+
+// ── SETTINGS ──────────────────────────────────────────
+function renderSettings() {
+  hide('leave-warning');
+}
+
+function openLeaveModal() { openModal('modal-leave'); hide('leave-warning'); }
+
+// ── REALTIME ──────────────────────────────────────────
+function subscribeRealtime() {
+  sb.channel('org-presence-' + ME.organization_id)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles',
+        filter: `organization_id=eq.${ME.organization_id}` },
+      async () => {
+        await loadOrgMembers();
+        if ($('page-dashboard').classList.contains('hidden') === false) renderDashboard();
+        if ($('page-screens').classList.contains('hidden') === false) renderScreens();
+        if ($('page-members').classList.contains('hidden') === false) renderMembers();
+      })
+    .subscribe();
+}
+
+// ── SCREEN MANAGEMENT ─────────────────────────────────
+function showScreen(name) {
+  $('screen-auth').style.display = name === 'auth' ? 'flex' : 'none';
+  name === 'setup' ? show('screen-setup') : hide('screen-setup');
+  if (name === 'app') $('screen-app').classList.add('show');
+  else $('screen-app').classList.remove('show');
+}
+
+// ── MODALS ────────────────────────────────────────────
+function openModal(id) { show(id); }
+function closeModal(id) { hide(id); }
+document.querySelectorAll('.modal-overlay').forEach(o => {
+  o.addEventListener('click', e => { if (e.target === o) hide(o.id); });
+});
+
+// ── UTILS ─────────────────────────────────────────────
+function randCode() { return Math.random().toString(36).substring(2, 8).toUpperCase(); }
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function copyCode() {
+  const code = MY_ORG?.code; if (!code) return;
+  navigator.clipboard?.writeText(code);
+  toast('Copied join code: ' + code, 'success');
+}
+
+function timeAgo(ts) {
+  if (!ts) return '—';
+  const diff = Date.now() - new Date(ts).getTime();
+  if (diff < 60000) return 'just now';
+  if (diff < 3600000) return Math.floor(diff / 60000) + 'm ago';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + 'h ago';
+  return Math.floor(diff / 86400000) + 'd ago';
+}
+
+function showErr(id, msg) { const e = $(id); e.textContent = msg; e.classList.remove('hidden'); }
+function setLoading(id, txt) { const b = $(id); b.disabled = true; b.textContent = txt; }
+function clearLoading(id, txt) { const b = $(id); b.disabled = false; b.textContent = txt; }
+
+// ── CLEANUP ON LEAVE ──────────────────────────────────
+window.addEventListener('beforeunload', () => {
+  if (ME) sb.from('profiles').update({ is_online: false, is_sharing: false }).eq('id', ME.id);
+  if (localStream) localStream.getTracks().forEach(t => t.stop());
+});
+
+// ── SESSION CHECK ON LOAD ─────────────────────────────
+(async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) { showScreen('auth'); return; }
+  await loadSession(session.user);
+})();
+</script>
+</body>
+</html>
