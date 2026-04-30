@@ -670,41 +670,67 @@ async function doSignUp() {
 
   setLoading('su-btn', 'Creating account…');
 
+  // Step 1: Sign up
   const { data: authData, error: authErr } = await sb.auth.signUp({
     email, password: pass, options: { data: { full_name: name } }
   });
-  if (authErr) { clearLoading('su-btn', 'Create Account'); showErr('su-err', authErr.message); return; }
 
-  const userId = authData.user?.id;
-  if (!userId) { clearLoading('su-btn', 'Create Account'); showErr('su-err', 'Signup failed. Try again.'); return; }
+  if (authErr) {
+    clearLoading('su-btn', 'Create Account');
+    showErr('su-err', authErr.message);
+    return;
+  }
 
-  // Upsert profile
-  await sb.from('profiles').upsert({ id: userId, full_name: name, email, role: orgType === 'create' ? 'manager' : 'member' });
+  // Step 2: Sign in immediately (works when email confirmation is OFF)
+  const { data: signInData, error: signInErr } = await sb.auth.signInWithPassword({
+    email, password: pass
+  });
 
+  if (signInErr) {
+    clearLoading('su-btn', 'Create Account');
+    showErr('su-err', 'Account created! Please sign in manually.');
+    authTab('signin');
+    $('si-email').value = email;
+    return;
+  }
+
+  const userId = signInData.user.id;
+
+  // Step 3: Upsert profile
+  await sb.from('profiles').upsert({
+    id: userId,
+    full_name: name,
+    email,
+    role: orgType === 'create' ? 'manager' : 'member'
+  });
+
+  // Step 4: Create or join org
   if (orgType === 'create') {
     const code = randCode();
-    const { data: org, error: orgErr } = await sb.from('organizations').insert({ name: orgName, code, created_by: userId }).select().single();
-    if (orgErr) { clearLoading('su-btn', 'Create Account'); showErr('su-err', 'Could not create org: ' + orgErr.message); return; }
+    const { data: org, error: orgErr } = await sb.from('organizations')
+      .insert({ name: orgName, code, created_by: userId })
+      .select().single();
+
+    if (orgErr) {
+      clearLoading('su-btn', 'Create Account');
+      showErr('su-err', 'Could not create org: ' + orgErr.message);
+      return;
+    }
     await sb.from('profiles').update({ organization_id: org.id, role: 'manager' }).eq('id', userId);
   } else {
     const { data: org } = await sb.from('organizations').select('id').eq('code', orgCode).single();
-    if (!org) { clearLoading('su-btn', 'Create Account'); showErr('su-err', 'Organization code not found.'); return; }
+    if (!org) {
+      clearLoading('su-btn', 'Create Account');
+      showErr('su-err', 'Organization code not found.');
+      return;
+    }
     await sb.from('profiles').update({ organization_id: org.id, role: 'member' }).eq('id', userId);
   }
 
   clearLoading('su-btn', 'Create Account');
-  toast('Account created! Check your email to confirm, then sign in.', 'success');
-  authTab('signin');
+  // Session is active — load the app directly
+  await loadSession(signInData.user);
 }
-
-// ── AUTH STATE ────────────────────────────────────────
-sb.auth.onAuthStateChange(async (event, session) => {
-  if (session?.user) {
-    await loadSession(session.user);
-  } else {
-    showScreen('auth');
-  }
-});
 
 async function loadSession(user) {
   // Wait briefly for trigger to create profile
