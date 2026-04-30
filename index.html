@@ -565,8 +565,8 @@ input,select,textarea{font-family:inherit}
 // ════════════════════════════════════════════════════
 //  CONFIG — Replace with your Supabase values
 // ════════════════════════════════════════════════════
-const SUPABASE_URL      = 'https://nyuijvlbyhyljaaxiifo.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55dWlqdmxieWh5bGphYXhpaWZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NTYyNDYsImV4cCI6MjA5MzAzMjI0Nn0.qLiwsPULqepLqGzJ3fSxzk_bMoljXuEhkpXEgSbBBhE';
+const SUPABASE_URL      = 'https://YOUR_PROJECT.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY_HERE';
 
 // ── INIT ──────────────────────────────────────────────
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -654,100 +654,108 @@ async function doSignIn() {
 
 // ── SIGN UP ───────────────────────────────────────────
 async function doSignUp() {
-  const name     = $('su-name').value.trim();
-  const email    = $('su-email').value.trim();
-  const pass     = $('su-pass').value;
-  const orgType  = $('opc-join').classList.contains('sel') ? 'join' : 'create';
-  const orgName  = $('su-orgname').value.trim();
-  const orgCode  = $('su-code').value.trim().toUpperCase();
+  const name    = $('su-name').value.trim();
+  const email   = $('su-email').value.trim();
+  const pass    = $('su-pass').value;
+  const orgType = $('opc-join').classList.contains('sel') ? 'join' : 'create';
+  const orgName = $('su-orgname').value.trim();
+  const orgCode = $('su-code').value.trim().toUpperCase();
   hide('su-err');
 
-  if (!name) { showErr('su-err', 'Enter your full name.'); return; }
-  if (!email || !email.includes('@')) { showErr('su-err', 'Enter a valid email.'); return; }
-  if (pass.length < 8) { showErr('su-err', 'Password must be 8+ characters.'); return; }
-  if (orgType === 'create' && !orgName) { showErr('su-err', 'Enter an organization name.'); return; }
-  if (orgType === 'join' && orgCode.length !== 6) { showErr('su-err', 'Enter a valid 6-character join code.'); return; }
+  if (!name)                                     { showErr('su-err', 'Enter your full name.'); return; }
+  if (!email || !email.includes('@'))            { showErr('su-err', 'Enter a valid email.'); return; }
+  if (pass.length < 8)                           { showErr('su-err', 'Password must be 8+ characters.'); return; }
+  if (orgType === 'create' && !orgName)          { showErr('su-err', 'Enter an organization name.'); return; }
+  if (orgType === 'join' && orgCode.length !== 6){ showErr('su-err', 'Enter a valid 6-character join code.'); return; }
 
-  setLoading('su-btn', 'Creating account…');
+  setLoading('su-btn', 'Creating account...');
 
-  // Step 1: Sign up
-  const { data: authData, error: authErr } = await sb.auth.signUp({
+  // 1. Create auth user
+  const { error: authErr } = await sb.auth.signUp({
     email, password: pass, options: { data: { full_name: name } }
   });
+  if (authErr) { clearLoading('su-btn', 'Create Account'); showErr('su-err', authErr.message); return; }
 
-  if (authErr) {
-    clearLoading('su-btn', 'Create Account');
-    showErr('su-err', authErr.message);
-    return;
-  }
-
-  // Step 2: Sign in immediately (works when email confirmation is OFF)
-  const { data: signInData, error: signInErr } = await sb.auth.signInWithPassword({
-    email, password: pass
-  });
-
+  // 2. Sign in immediately (requires email confirmation OFF)
+  const { data: signInData, error: signInErr } = await sb.auth.signInWithPassword({ email, password: pass });
   if (signInErr) {
     clearLoading('su-btn', 'Create Account');
-    showErr('su-err', 'Account created! Please sign in manually.');
+    showErr('su-err', 'Account created! Please sign in below.');
     authTab('signin');
     $('si-email').value = email;
     return;
   }
 
   const userId = signInData.user.id;
+  const role   = orgType === 'create' ? 'manager' : 'member';
 
-  // Step 3: Upsert profile
-  await sb.from('profiles').upsert({
-    id: userId,
-    full_name: name,
-    email,
-    role: orgType === 'create' ? 'manager' : 'member'
-  });
+  // 3. Upsert profile
+  await sb.from('profiles').upsert({ id: userId, full_name: name, email, role });
 
-  // Step 4: Create or join org
+  // 4. Create or join org
+  let orgId = null;
   if (orgType === 'create') {
     const code = randCode();
     const { data: org, error: orgErr } = await sb.from('organizations')
       .insert({ name: orgName, code, created_by: userId })
       .select().single();
-
-    if (orgErr) {
-      clearLoading('su-btn', 'Create Account');
-      showErr('su-err', 'Could not create org: ' + orgErr.message);
-      return;
-    }
-    await sb.from('profiles').update({ organization_id: org.id, role: 'manager' }).eq('id', userId);
+    if (orgErr) { clearLoading('su-btn', 'Create Account'); showErr('su-err', 'Could not create org: ' + orgErr.message); return; }
+    orgId = org.id;
+    MY_ORG = org;
   } else {
-    const { data: org } = await sb.from('organizations').select('id').eq('code', orgCode).single();
-    if (!org) {
-      clearLoading('su-btn', 'Create Account');
-      showErr('su-err', 'Organization code not found.');
-      return;
-    }
-    await sb.from('profiles').update({ organization_id: org.id, role: 'member' }).eq('id', userId);
+    const { data: org } = await sb.from('organizations').select('*').eq('code', orgCode).single();
+    if (!org) { clearLoading('su-btn', 'Create Account'); showErr('su-err', 'Organization code not found.'); return; }
+    orgId = org.id;
+    MY_ORG = org;
   }
 
+  // 5. Update profile with org + role in one shot
+  await sb.from('profiles')
+    .update({ organization_id: orgId, role, is_online: true, last_seen: new Date().toISOString() })
+    .eq('id', userId);
+
+  // 6. Set local state directly (no re-fetch)
+  ME = { id: userId, full_name: name, email, role, organization_id: orgId, is_online: true, is_sharing: false };
+
+  // 7. Load org members
+  await loadOrgMembers();
+
   clearLoading('su-btn', 'Create Account');
-  // Session is active — load the app directly
-  await loadSession(signInData.user);
+  showApp();
+  subscribeRealtime();
+  toast('Welcome to ' + MY_ORG.name + '! 🎉', 'success');
 }
 
+// ── AUTH STATE ────────────────────────────────────────
+sb.auth.onAuthStateChange(async (event, session) => {
+  if (session?.user) {
+    await loadSession(session.user);
+  } else {
+    showScreen('auth');
+  }
+});
+
 async function loadSession(user) {
-  // Wait briefly for trigger to create profile
-  await delay(400);
-  let { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).single();
+  // Retry up to 5 times - DB trigger may be slightly delayed
+  let profile = null;
+  for (let i = 0; i < 5; i++) {
+    await delay(400);
+    const { data } = await sb.from('profiles').select('*').eq('id', user.id).single();
+    if (data) { profile = data; break; }
+  }
 
   if (!profile) {
-    // Create if missing
     const name = user.user_metadata?.full_name || user.email.split('@')[0];
-    await sb.from('profiles').upsert({ id: user.id, full_name: name, email: user.email });
+    await sb.from('profiles').upsert({ id: user.id, full_name: name, email: user.email, role: 'member' });
     profile = { id: user.id, full_name: name, email: user.email, role: 'member', organization_id: null };
   }
 
   ME = profile;
 
   // Mark online
-  await sb.from('profiles').update({ is_online: true, last_seen: new Date().toISOString() }).eq('id', ME.id);
+  await sb.from('profiles')
+    .update({ is_online: true, last_seen: new Date().toISOString() })
+    .eq('id', ME.id);
 
   if (!ME.organization_id) {
     showScreen('setup');
@@ -756,6 +764,13 @@ async function loadSession(user) {
 
   // Load org
   const { data: org } = await sb.from('organizations').select('*').eq('id', ME.organization_id).single();
+  if (!org) {
+    // Org deleted - send user back to setup
+    await sb.from('profiles').update({ organization_id: null }).eq('id', ME.id);
+    ME.organization_id = null;
+    showScreen('setup');
+    return;
+  }
   MY_ORG = org;
 
   await loadOrgMembers();
@@ -875,8 +890,11 @@ function goPage(pg) {
 // ── LOAD ORG MEMBERS ─────────────────────────────────
 async function loadOrgMembers() {
   if (!ME?.organization_id) return;
-  const { data } = await sb.from('profiles').select('*').eq('organization_id', ME.organization_id);
-  ORG_MEMBERS = data || [];
+  const { data, error } = await sb.from('profiles')
+    .select('*')
+    .eq('organization_id', ME.organization_id)
+    .order('created_at', { ascending: true });
+  if (!error) ORG_MEMBERS = data || [];
 }
 
 // ── DASHBOARD ─────────────────────────────────────────
