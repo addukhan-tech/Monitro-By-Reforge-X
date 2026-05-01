@@ -733,34 +733,38 @@ async function loadSession(user) {
 
   const name = user.user_metadata?.full_name || user.email.split('@')[0];
 
-  // Always upsert profile first — safe even if trigger already ran
-  dbg('Upserting profile...', '#f5c542');
-  const { error: upsertErr } = await sb.from('profiles').upsert({
-    id: user.id,
-    full_name: name,
-    email: user.email,
-    role: 'member',
-    is_online: true,
-    last_seen: new Date().toISOString()
-  }, { onConflict: 'id' });
+  // Step 1: Try to read existing profile
+  dbg('Reading profile...', '#f5c542');
+  let { data: profile } = await sb.from('profiles').select('*').eq('id', user.id).single();
 
-  if (upsertErr) {
-    dbg('Upsert error: ' + upsertErr.message, '#ff6584');
-  } else {
-    dbg('Profile upserted OK', '#2dd98b');
+  if (!profile) {
+    // Step 2: Profile doesn't exist — insert it
+    dbg('No profile found, inserting...', '#f5c542');
+    const { error: insErr } = await sb.from('profiles')
+      .insert({ id: user.id, full_name: name, email: user.email, role: 'member' });
+
+    if (insErr) {
+      dbg('Insert error: ' + insErr.message, '#ff6584');
+      // Try one more read — trigger may have just created it
+      const { data: p2 } = await sb.from('profiles').select('*').eq('id', user.id).single();
+      if (!p2) {
+        showErr('si-err', 'Could not create profile: ' + insErr.message);
+        showScreen('auth');
+        return;
+      }
+      profile = p2;
+    } else {
+      const { data: p3 } = await sb.from('profiles').select('*').eq('id', user.id).single();
+      profile = p3;
+    }
   }
 
-  // Now read it back once
-  const { data: profile, error: readErr } = await sb.from('profiles').select('*').eq('id', user.id).single();
+  dbg('Profile OK: role=' + profile.role + ' org=' + (profile.organization_id || 'none'), '#2dd98b');
 
-  if (readErr || !profile) {
-    dbg('Cannot read profile: ' + (readErr?.message || 'null'), '#ff6584');
-    showErr('si-err', 'Profile error — check Supabase RLS policies.');
-    showScreen('auth');
-    return;
-  }
-
-  dbg('Profile loaded: role=' + profile.role + ' org=' + (profile.organization_id || 'none'), '#2dd98b');
+  // Mark online
+  await sb.from('profiles')
+    .update({ is_online: true, last_seen: new Date().toISOString() })
+    .eq('id', user.id);
 
   // If this is a fresh signup, finish org setup now
   dbg('pendingSignup detected, creating org...', '#3ecfcf');
