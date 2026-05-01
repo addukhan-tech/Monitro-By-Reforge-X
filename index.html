@@ -730,23 +730,37 @@ sb.auth.onAuthStateChange(async (event, session) => {
 
 async function loadSession(user) {
   dbg('loadSession called for ' + user.id.slice(0,8), '#3ecfcf');
-  // Wait for DB trigger to create the profile row
-  let profile = null;
-  for (let i = 0; i < 6; i++) {
-    await delay(500);
-    const { data } = await sb.from('profiles').select('*').eq('id', user.id).single();
-    if (data) { dbg('Profile found on attempt ' + (i+1), '#2dd98b'); profile = data; break; }
-      dbg('Profile not found yet, attempt ' + (i+1), '#f5c542');
+
+  const name = user.user_metadata?.full_name || user.email.split('@')[0];
+
+  // Always upsert profile first — safe even if trigger already ran
+  dbg('Upserting profile...', '#f5c542');
+  const { error: upsertErr } = await sb.from('profiles').upsert({
+    id: user.id,
+    full_name: name,
+    email: user.email,
+    role: 'member',
+    is_online: true,
+    last_seen: new Date().toISOString()
+  }, { onConflict: 'id' });
+
+  if (upsertErr) {
+    dbg('Upsert error: ' + upsertErr.message, '#ff6584');
+  } else {
+    dbg('Profile upserted OK', '#2dd98b');
   }
 
-  // If trigger never fired, create profile manually
-  if (!profile) {
-    const name = user.user_metadata?.full_name || user.email.split('@')[0];
-    await sb.from('profiles').upsert({
-      id: user.id, full_name: name, email: user.email, role: 'member'
-    });
-    profile = { id: user.id, full_name: name, email: user.email, role: 'member', organization_id: null };
+  // Now read it back once
+  const { data: profile, error: readErr } = await sb.from('profiles').select('*').eq('id', user.id).single();
+
+  if (readErr || !profile) {
+    dbg('Cannot read profile: ' + (readErr?.message || 'null'), '#ff6584');
+    showErr('si-err', 'Profile error — check Supabase RLS policies.');
+    showScreen('auth');
+    return;
   }
+
+  dbg('Profile loaded: role=' + profile.role + ' org=' + (profile.organization_id || 'none'), '#2dd98b');
 
   // If this is a fresh signup, finish org setup now
   dbg('pendingSignup detected, creating org...', '#3ecfcf');
