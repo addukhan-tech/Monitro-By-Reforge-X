@@ -230,6 +230,8 @@ input,select,textarea{font-family:inherit}
 </head>
 <body>
 <div id="toast-wrap"></div>
+<!-- DEBUG OVERLAY -->
+<div id="debug-bar" style="position:fixed;bottom:0;left:0;right:0;background:#1a1a2e;border-top:2px solid #6c63ff;padding:8px 14px;font-family:monospace;font-size:11px;color:#a0a0ff;z-index:99999;max-height:120px;overflow-y:auto"></div>
 
 <!-- ══════════ AUTH ══════════ -->
 <div id="screen-auth">
@@ -572,6 +574,18 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 // ── INIT ──────────────────────────────────────────────
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+// ── DEBUG LOGGER ──────────────────────────────────────
+function dbg(msg, color) {
+  const bar = document.getElementById('debug-bar');
+  if (!bar) return;
+  const line = document.createElement('div');
+  line.style.color = color || '#a0a0ff';
+  line.textContent = new Date().toLocaleTimeString() + '  ' + msg;
+  bar.appendChild(line);
+  bar.scrollTop = bar.scrollHeight;
+  console.log('[DBG]', msg);
+}
+
 // State
 let ME = null;          // current profile
 let MY_ORG = null;      // current organization
@@ -671,16 +685,19 @@ async function doSignUp() {
   if (orgType === 'join' && orgCode.length !== 6){ showErr('su-err', 'Enter a valid 6-character join code.'); return; }
 
   setLoading('su-btn', 'Creating account...');
+  dbg('Starting signup for ' + email, '#f5c542');
 
   // Store what we need for after auth completes
   pendingSignup = { name, email, orgType, orgName, orgCode };
 
+  dbg('Calling sb.auth.signUp...', '#a0a0ff');
   const { data, error } = await sb.auth.signUp({
     email, password: pass,
     options: { data: { full_name: name } }
   });
 
   if (error) {
+    dbg('signUp ERROR: ' + error.message, '#ff6584');
     pendingSignup = null;
     clearLoading('su-btn', 'Create Account');
     showErr('su-err', error.message);
@@ -689,6 +706,7 @@ async function doSignUp() {
 
   // If Supabase returned a session directly (email confirmation OFF) — great, proceed
   // If not (email confirmation ON) — tell user to confirm then sign in
+  dbg('signUp done. session=' + (data.session ? 'YES' : 'NO') + ' user=' + (data.user ? data.user.id.slice(0,8) : 'null'), '#2dd98b');
   if (!data.session) {
     pendingSignup = null;
     clearLoading('su-btn', 'Create Account');
@@ -711,12 +729,14 @@ sb.auth.onAuthStateChange(async (event, session) => {
 });
 
 async function loadSession(user) {
+  dbg('loadSession called for ' + user.id.slice(0,8), '#3ecfcf');
   // Wait for DB trigger to create the profile row
   let profile = null;
   for (let i = 0; i < 6; i++) {
     await delay(500);
     const { data } = await sb.from('profiles').select('*').eq('id', user.id).single();
-    if (data) { profile = data; break; }
+    if (data) { dbg('Profile found on attempt ' + (i+1), '#2dd98b'); profile = data; break; }
+      dbg('Profile not found yet, attempt ' + (i+1), '#f5c542');
   }
 
   // If trigger never fired, create profile manually
@@ -729,6 +749,7 @@ async function loadSession(user) {
   }
 
   // If this is a fresh signup, finish org setup now
+  dbg('pendingSignup detected, creating org...', '#3ecfcf');
   if (pendingSignup) {
     const { name, orgType, orgName, orgCode } = pendingSignup;
     pendingSignup = null;
@@ -780,6 +801,7 @@ async function loadSession(user) {
     return;
   }
 
+  dbg('Normal sign-in flow, org_id=' + (profile.organization_id || 'none'), '#3ecfcf');
   // Normal sign-in flow
   ME = profile;
   await sb.from('profiles')
@@ -801,6 +823,7 @@ async function loadSession(user) {
   MY_ORG = org;
 
   await loadOrgMembers();
+  dbg('showApp() called!', '#2dd98b');
   showApp();
   subscribeRealtime();
 }
