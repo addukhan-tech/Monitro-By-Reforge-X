@@ -669,16 +669,31 @@ async function doSignUp() {
   if (orgType === 'join' && orgCode.length !== 6){ showErr('su-err', 'Enter a valid 6-character join code.'); return; }
 
   setLoading('su-btn', 'Creating account...');
+  handlingSignup = true; // prevent onAuthStateChange from interfering
 
   // 1. Create auth user
   const { error: authErr } = await sb.auth.signUp({
     email, password: pass, options: { data: { full_name: name } }
   });
-  if (authErr) { clearLoading('su-btn', 'Create Account'); showErr('su-err', authErr.message); return; }
+  if (authErr) { handlingSignup = false; clearLoading('su-btn', 'Create Account'); showErr('su-err', authErr.message); return; }
 
-  // 2. Sign in immediately (requires email confirmation OFF)
-  const { data: signInData, error: signInErr } = await sb.auth.signInWithPassword({ email, password: pass });
-  if (signInErr) {
+  // 2. Sign in with retry (Supabase may need a moment after signup)
+  let signInData = null;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await delay(600);
+    const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+    if (data?.user) { signInData = data; break; }
+    if (error && error.message.includes('Email not confirmed')) {
+      handlingSignup = false;
+      clearLoading('su-btn', 'Create Account');
+      showErr('su-err', 'Please confirm your email first, then sign in.');
+      authTab('signin');
+      $('si-email').value = email;
+      return;
+    }
+  }
+  if (!signInData?.user) {
+    handlingSignup = false;
     clearLoading('su-btn', 'Create Account');
     showErr('su-err', 'Account created! Please sign in below.');
     authTab('signin');
@@ -699,12 +714,12 @@ async function doSignUp() {
     const { data: org, error: orgErr } = await sb.from('organizations')
       .insert({ name: orgName, code, created_by: userId })
       .select().single();
-    if (orgErr) { clearLoading('su-btn', 'Create Account'); showErr('su-err', 'Could not create org: ' + orgErr.message); return; }
+    if (orgErr) { handlingSignup = false; clearLoading('su-btn', 'Create Account'); showErr('su-err', 'Could not create org: ' + orgErr.message); return; }
     orgId = org.id;
     MY_ORG = org;
   } else {
     const { data: org } = await sb.from('organizations').select('*').eq('code', orgCode).single();
-    if (!org) { clearLoading('su-btn', 'Create Account'); showErr('su-err', 'Organization code not found.'); return; }
+    if (!org) { handlingSignup = false; clearLoading('su-btn', 'Create Account'); showErr('su-err', 'Organization code not found.'); return; }
     orgId = org.id;
     MY_ORG = org;
   }
@@ -720,6 +735,7 @@ async function doSignUp() {
   // 7. Load org members
   await loadOrgMembers();
 
+  handlingSignup = false;
   clearLoading('su-btn', 'Create Account');
   showApp();
   subscribeRealtime();
@@ -727,7 +743,11 @@ async function doSignUp() {
 }
 
 // ── AUTH STATE ────────────────────────────────────────
+// Flag to prevent onAuthStateChange firing during manual signup flow
+let handlingSignup = false;
+
 sb.auth.onAuthStateChange(async (event, session) => {
+  if (handlingSignup) return; // signup handles its own flow
   if (session?.user) {
     await loadSession(session.user);
   } else {
