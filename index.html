@@ -644,16 +644,17 @@ async function doSignIn() {
   const pass  = $('si-pass').value;
   hide('si-err');
   if (!email || !pass) { showErr('si-err', 'Fill in all fields.'); return; }
-
-  setLoading('si-btn', 'Signing in…');
+  setLoading('si-btn', 'Signing in...');
   const { error } = await sb.auth.signInWithPassword({ email, password: pass });
   clearLoading('si-btn', 'Sign In');
-
   if (error) { showErr('si-err', error.message); return; }
-  // onAuthStateChange will handle the rest
+  // onAuthStateChange handles the rest
 }
 
 // ── SIGN UP ───────────────────────────────────────────
+// Pending signup data — stored here, used by onAuthStateChange after session is ready
+let pendingSignup = null;
+
 async function doSignUp() {
   const name    = $('su-name').value.trim();
   const email   = $('su-email').value.trim();
@@ -670,120 +671,117 @@ async function doSignUp() {
   if (orgType === 'join' && orgCode.length !== 6){ showErr('su-err', 'Enter a valid 6-character join code.'); return; }
 
   setLoading('su-btn', 'Creating account...');
-  handlingSignup = true; // prevent onAuthStateChange from interfering
 
-  // 1. Create auth user — use session from signUp if available (avoids lock conflict)
-  const { data: signUpData, error: authErr } = await sb.auth.signUp({
-    email, password: pass, options: { data: { full_name: name } }
+  // Store what we need for after auth completes
+  pendingSignup = { name, email, orgType, orgName, orgCode };
+
+  const { data, error } = await sb.auth.signUp({
+    email, password: pass,
+    options: { data: { full_name: name } }
   });
-  if (authErr) { handlingSignup = false; clearLoading('su-btn', 'Create Account'); showErr('su-err', authErr.message); return; }
 
-  // 2. Use session from signUp directly if Supabase returned one
-  //    Only call signInWithPassword if we didn't get a session (email confirmation ON)
-  let signInData = signUpData?.session ? { user: signUpData.user } : null;
-
-  if (!signInData) {
-    // Wait for Supabase to finish writing before attempting sign in
-    await delay(1500);
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
-      if (data?.user) { signInData = data; break; }
-      if (error?.message?.includes('Email not confirmed')) {
-        handlingSignup = false;
-        clearLoading('su-btn', 'Create Account');
-        showErr('su-err', 'Please disable email confirmation in Supabase → Authentication → Settings.');
-        return;
-      }
-      if (error?.message?.includes('Lock')) {
-        // Lock conflict — wait longer and retry
-        await delay(1000);
-        continue;
-      }
-      await delay(500);
-    }
-  }
-
-  if (!signInData?.user) {
-    handlingSignup = false;
+  if (error) {
+    pendingSignup = null;
     clearLoading('su-btn', 'Create Account');
-    showErr('su-err', 'Account created! Please sign in below.');
-    authTab('signin');
-    $('si-email').value = email;
+    showErr('su-err', error.message);
     return;
   }
 
-  const userId = signInData.user.id;
-  const role   = orgType === 'create' ? 'manager' : 'member';
-
-  // 3. Upsert profile
-  await sb.from('profiles').upsert({ id: userId, full_name: name, email, role });
-
-  // 4. Create or join org
-  let orgId = null;
-  if (orgType === 'create') {
-    const code = randCode();
-    const { data: org, error: orgErr } = await sb.from('organizations')
-      .insert({ name: orgName, code, created_by: userId })
-      .select().single();
-    if (orgErr) { handlingSignup = false; clearLoading('su-btn', 'Create Account'); showErr('su-err', 'Could not create org: ' + orgErr.message); return; }
-    orgId = org.id;
-    MY_ORG = org;
-  } else {
-    const { data: org } = await sb.from('organizations').select('*').eq('code', orgCode).single();
-    if (!org) { handlingSignup = false; clearLoading('su-btn', 'Create Account'); showErr('su-err', 'Organization code not found.'); return; }
-    orgId = org.id;
-    MY_ORG = org;
+  // If Supabase returned a session directly (email confirmation OFF) — great, proceed
+  // If not (email confirmation ON) — tell user to confirm then sign in
+  if (!data.session) {
+    pendingSignup = null;
+    clearLoading('su-btn', 'Create Account');
+    showErr('su-err', '⚠️ Email confirmation is ON in Supabase. Go to Supabase → Authentication → Settings → turn OFF "Enable email confirmations", then try again.');
+    return;
   }
 
-  // 5. Update profile with org + role in one shot
-  await sb.from('profiles')
-    .update({ organization_id: orgId, role, is_online: true, last_seen: new Date().toISOString() })
-    .eq('id', userId);
-
-  // 6. Set local state directly (no re-fetch)
-  ME = { id: userId, full_name: name, email, role, organization_id: orgId, is_online: true, is_sharing: false };
-
-  // 7. Load org members
-  await loadOrgMembers();
-
-  handlingSignup = false;
-  clearLoading('su-btn', 'Create Account');
-  showApp();
-  subscribeRealtime();
-  toast('Welcome to ' + MY_ORG.name + '! 🎉', 'success');
+  // Session exists — onAuthStateChange will fire and call loadSession
+  // loadSession will see pendingSignup and finish the org setup
+  // Button stays loading until loadSession completes
 }
 
 // ── AUTH STATE ────────────────────────────────────────
-// Flag to prevent onAuthStateChange firing during manual signup flow
-let handlingSignup = false;
-
 sb.auth.onAuthStateChange(async (event, session) => {
-  if (handlingSignup) return; // signup handles its own flow
-  if (session?.user) {
+  if (event === 'SIGNED_IN' && session?.user) {
     await loadSession(session.user);
-  } else {
+  } else if (event === 'SIGNED_OUT') {
     showScreen('auth');
   }
 });
 
 async function loadSession(user) {
-  // Retry up to 5 times - DB trigger may be slightly delayed
+  // Wait for DB trigger to create the profile row
   let profile = null;
-  for (let i = 0; i < 5; i++) {
-    await delay(400);
+  for (let i = 0; i < 6; i++) {
+    await delay(500);
     const { data } = await sb.from('profiles').select('*').eq('id', user.id).single();
     if (data) { profile = data; break; }
   }
 
+  // If trigger never fired, create profile manually
   if (!profile) {
     const name = user.user_metadata?.full_name || user.email.split('@')[0];
-    await sb.from('profiles').upsert({ id: user.id, full_name: name, email: user.email, role: 'member' });
+    await sb.from('profiles').upsert({
+      id: user.id, full_name: name, email: user.email, role: 'member'
+    });
     profile = { id: user.id, full_name: name, email: user.email, role: 'member', organization_id: null };
   }
 
-  ME = profile;
+  // If this is a fresh signup, finish org setup now
+  if (pendingSignup) {
+    const { name, orgType, orgName, orgCode } = pendingSignup;
+    pendingSignup = null;
 
-  // Mark online
+    const role = orgType === 'create' ? 'manager' : 'member';
+
+    // Update name and role on profile
+    await sb.from('profiles').update({ full_name: name, role }).eq('id', user.id);
+    profile.full_name = name;
+    profile.role = role;
+
+    let orgId = null;
+    if (orgType === 'create') {
+      const code = randCode();
+      const { data: org, error: orgErr } = await sb.from('organizations')
+        .insert({ name: orgName, code, created_by: user.id })
+        .select().single();
+      if (orgErr) {
+        clearLoading('su-btn', 'Create Account');
+        showErr('su-err', 'Could not create org: ' + orgErr.message);
+        await sb.auth.signOut();
+        return;
+      }
+      orgId = org.id;
+      MY_ORG = org;
+    } else {
+      const { data: org } = await sb.from('organizations').select('*').eq('code', orgCode).single();
+      if (!org) {
+        clearLoading('su-btn', 'Create Account');
+        showErr('su-err', 'Organization code not found.');
+        await sb.auth.signOut();
+        return;
+      }
+      orgId = org.id;
+      MY_ORG = org;
+    }
+
+    // Link profile to org
+    await sb.from('profiles')
+      .update({ organization_id: orgId, role, is_online: true, last_seen: new Date().toISOString() })
+      .eq('id', user.id);
+
+    ME = { ...profile, organization_id: orgId, role, is_online: true, is_sharing: false };
+    await loadOrgMembers();
+    clearLoading('su-btn', 'Create Account');
+    showApp();
+    subscribeRealtime();
+    toast('Welcome to ' + MY_ORG.name + '! 🎉', 'success');
+    return;
+  }
+
+  // Normal sign-in flow
+  ME = profile;
   await sb.from('profiles')
     .update({ is_online: true, last_seen: new Date().toISOString() })
     .eq('id', ME.id);
@@ -793,10 +791,8 @@ async function loadSession(user) {
     return;
   }
 
-  // Load org
   const { data: org } = await sb.from('organizations').select('*').eq('id', ME.organization_id).single();
   if (!org) {
-    // Org deleted - send user back to setup
     await sb.from('profiles').update({ organization_id: null }).eq('id', ME.id);
     ME.organization_id = null;
     showScreen('setup');
