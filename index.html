@@ -565,8 +565,8 @@ input,select,textarea{font-family:inherit}
 // ════════════════════════════════════════════════════
 //  CONFIG — Replace with your Supabase values
 // ════════════════════════════════════════════════════
-const SUPABASE_URL      = 'https://nyuijvlbyhyljaaxiifo.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im55dWlqdmxieWh5bGphYXhpaWZvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0NTYyNDYsImV4cCI6MjA5MzAzMjI0Nn0.qLiwsPULqepLqGzJ3fSxzk_bMoljXuEhkpXEgSbBBhE';
+const SUPABASE_URL      = 'https://YOUR_PROJECT.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY_HERE';
 
 // ── INIT ──────────────────────────────────────────────
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -671,27 +671,37 @@ async function doSignUp() {
   setLoading('su-btn', 'Creating account...');
   handlingSignup = true; // prevent onAuthStateChange from interfering
 
-  // 1. Create auth user
-  const { error: authErr } = await sb.auth.signUp({
+  // 1. Create auth user — use session from signUp if available (avoids lock conflict)
+  const { data: signUpData, error: authErr } = await sb.auth.signUp({
     email, password: pass, options: { data: { full_name: name } }
   });
   if (authErr) { handlingSignup = false; clearLoading('su-btn', 'Create Account'); showErr('su-err', authErr.message); return; }
 
-  // 2. Sign in with retry (Supabase may need a moment after signup)
-  let signInData = null;
-  for (let attempt = 0; attempt < 4; attempt++) {
-    await delay(600);
-    const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
-    if (data?.user) { signInData = data; break; }
-    if (error && error.message.includes('Email not confirmed')) {
-      handlingSignup = false;
-      clearLoading('su-btn', 'Create Account');
-      showErr('su-err', 'Please confirm your email first, then sign in.');
-      authTab('signin');
-      $('si-email').value = email;
-      return;
+  // 2. Use session from signUp directly if Supabase returned one
+  //    Only call signInWithPassword if we didn't get a session (email confirmation ON)
+  let signInData = signUpData?.session ? { user: signUpData.user } : null;
+
+  if (!signInData) {
+    // Wait for Supabase to finish writing before attempting sign in
+    await delay(1500);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const { data, error } = await sb.auth.signInWithPassword({ email, password: pass });
+      if (data?.user) { signInData = data; break; }
+      if (error?.message?.includes('Email not confirmed')) {
+        handlingSignup = false;
+        clearLoading('su-btn', 'Create Account');
+        showErr('su-err', 'Please disable email confirmation in Supabase → Authentication → Settings.');
+        return;
+      }
+      if (error?.message?.includes('Lock')) {
+        // Lock conflict — wait longer and retry
+        await delay(1000);
+        continue;
+      }
+      await delay(500);
     }
   }
+
   if (!signInData?.user) {
     handlingSignup = false;
     clearLoading('su-btn', 'Create Account');
